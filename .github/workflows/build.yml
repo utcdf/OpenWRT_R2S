@@ -1,0 +1,131 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential ccache ecj fastjar file g++ gawk gettext git \
+            java-propose-classpath libelf-dev libncurses-dev libssl-dev \
+            python3 python3-distutils python3-setuptools rsync subversion \
+            swig time unzip wget xsltproc zlib1g-dev sudo curl ca-certificates \
+            bash bc bison flex gcc-multilib g++-multilib zstd
+
+      - name: Read locked commit
+        id: commit
+        run: |
+          COMMIT=$(tr -d '[:space:]' < build/IMMORTALWRT_COMMIT)
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+          echo "short=${COMMIT:0:8}" >> "$GITHUB_OUTPUT"
+
+      - name: Clone ImmortalWrt
+        run: |
+          git clone https://github.com/immortalwrt/immortalwrt
+          cd immortalwrt
+          git checkout ${{ steps.commit.outputs.commit }}
+
+      - name: Apply feeds
+        run: |
+          cp build/feeds.conf.default immortalwrt/feeds.conf.default
+          cd immortalwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Link rootfs files
+        run: |
+          rm -rf immortalwrt/files
+          ln -s "$PWD/files" immortalwrt/files
+
+      - name: Apply diffconfig
+        run: |
+          cp build/.config.seed immortalwrt/.config
+          cd immortalwrt
+          make defconfig
+
+      - name: Cache dl
+        uses: actions/cache@v4
+        with:
+          path: immortalwrt/dl
+          key: dl-${{ steps.commit.outputs.short }}-${{ hashFiles('build/.config.seed') }}
+          restore-keys: |
+            dl-${{ steps.commit.outputs.short }}-
+            dl-
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ steps.commit.outputs.short }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ steps.commit.outputs.short }}-
+
+      - name: Download sources
+        run: |
+          cd immortalwrt
+          make download -j8 V=s 2>&1 | tail -200 || make download -j1 V=s
+
+      - name: Build
+        run: |
+          mkdir -p logs
+          cd immortalwrt
+          export PATH=/usr/lib/ccache:$PATH
+          make -j$(nproc) 2>&1 | tee ../logs/build.log \
+            || make -j1 V=s 2>&1 | tee -a ../logs/build.log
+
+      - name: Collect artifacts
+        run: |
+          OUT="out/${{ steps.commit.outputs.short }}"
+          mkdir -p "$OUT"
+          cp immortalwrt/bin/targets/rockchip/armv8/*nanopi-r2s* "$OUT/" || true
+          cp immortalwrt/bin/targets/rockchip/armv8/sha256sums   "$OUT/" || true
+          ls -lh "$OUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanopi-r2s-${{ steps.commit.outputs.short }}
+          path: out/
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ steps.commit.outputs.short }}
+          path: logs/
+          if-no-files-found: ignore
+
+      - name: GitHub Release on tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/**/immortalwrt-rockchip-armv8-friendlyarm_nanopi-r2s-squashfs-sysupgrade.img.gz
+            out/**/sha256sums
