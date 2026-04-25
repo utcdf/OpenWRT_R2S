@@ -1,0 +1,21 @@
+services:
+  builder:
+    build:
+      context: ./docker
+      args:
+        APT_MIRROR: deb.debian.org
+    image: r2s-builder:latest
+    container_name: r2s-builder
+    working_dir: /work
+    user: "1000:1000"
+    volumes:
+      - ../:/work
+      - r2s-ccache:/home/builder/.ccache
+      - r2s-dl:/work/immortalwrt/dl
+    command: ["/bin/bash"]
+    stdin_open: true
+    tty: true
+
+volumes:
+  r2s-ccache:
+  r2s-dl:

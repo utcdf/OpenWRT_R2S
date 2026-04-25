@@ -1,0 +1,2 @@
+ignored:
+  - DL3008  # apt 不固定版本（OpenWRT 编译依赖跨发行版兼容更重要）
