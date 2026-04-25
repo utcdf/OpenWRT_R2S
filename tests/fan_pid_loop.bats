@@ -61,7 +61,7 @@ teardown() {
     [ "$pwm" = "200" ]
 }
 
-@test "convergence over 30 iterations approaches setpoint" {
+@test "integrator accumulates pwm under sustained overshoot" {
     echo 70000 > "$THERMAL"
     last_pwm=0
     for i in $(seq 1 30); do
