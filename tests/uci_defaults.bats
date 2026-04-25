@@ -38,6 +38,8 @@ setup() {
 }
 
 @test "enables fan-pid service" {
+    run env CONFIG_DIR="$TEST_CONFIG_DIR" PROFILES_DIR="$TEST_PROFILES_SRC" "$SCRIPT"
+    [ "$status" -eq 0 ]
     grep -q "fan-pid.*enable" "$UCI_LOG" || \
         [ -e "$TEST_CONFIG_DIR/.fan_pid_enabled_marker" ]
 }
