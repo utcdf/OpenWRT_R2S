@@ -61,6 +61,45 @@ if [ "$ACTION" = "update-feeds" ]; then
     exit 0
 fi
 
-# Step C/D 在 Task 6 中填充（链接 files/、写入 .config、make）
-echo "[inner] config + build steps not yet implemented (Task 6)"
-exit 0
+# Step C: 链接 files/ 注入 rootfs
+echo "[inner] linking files/ into ImmortalWrt source"
+if [ -L "$SRC_DIR/files" ] || [ -d "$SRC_DIR/files" ]; then
+    run rm -rf "$SRC_DIR/files"
+fi
+run ln -s "$REPO_ROOT/files" "$SRC_DIR/files"
+
+# Step D: 复制 .config.seed 并 defconfig
+echo "[inner] applying .config.seed and running defconfig"
+run cp "$REPO_ROOT/build/.config.seed" "$SRC_DIR/.config"
+run make defconfig
+
+# Step E: 下载源码包
+echo "[inner] make download -j8"
+run make download -j8 || run make download -j1 V=s
+
+# Step F: 编译
+NPROC=$(nproc)
+echo "[inner] make -j${NPROC}"
+LOG_DIR="${REPO_ROOT}/logs"
+run mkdir -p "$LOG_DIR"
+LOG_FILE="${LOG_DIR}/build-$(date +%Y%m%d-%H%M%S).log"
+
+if ! run bash -c "make -j${NPROC} 2>&1 | tee \"$LOG_FILE\""; then
+    echo "[inner] parallel build failed, retrying with -j1 V=s for diagnostics"
+    LOG_FILE="${LOG_DIR}/build-verbose-$(date +%Y%m%d-%H%M%S).log"
+    run bash -c "make -j1 V=s 2>&1 | tee \"$LOG_FILE\"" || {
+        echo "[inner] build failed; last 200 lines:"
+        tail -n 200 "$LOG_FILE"
+        exit 1
+    }
+fi
+
+# Step G: 拷贝产物
+OUT_DIR="${REPO_ROOT}/out/$(date +%Y%m%d)-${COMMIT:0:8}"
+echo "[inner] copying artifacts to $OUT_DIR"
+run mkdir -p "$OUT_DIR"
+run bash -c "cp $SRC_DIR/bin/targets/rockchip/armv8/*nanopi-r2s* $OUT_DIR/ 2>/dev/null || true"
+run bash -c "cp $SRC_DIR/bin/targets/rockchip/armv8/sha256sums $OUT_DIR/ 2>/dev/null || true"
+
+echo "[inner] build done; artifacts in $OUT_DIR"
+ls -lh "$OUT_DIR" 2>/dev/null || true
