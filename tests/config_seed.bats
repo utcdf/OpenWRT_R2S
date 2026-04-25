@@ -10,8 +10,8 @@ SEED="${BATS_TEST_DIRNAME}/../build/.config.seed"
     grep -q "CONFIG_PACKAGE_kmod-usb-net-rtl8152=y" "$SEED"
 }
 
-@test "includes rockchip pwm driver" {
-    grep -q "CONFIG_PACKAGE_kmod-pwm-rockchip=y" "$SEED"
+@test "documents pwm built into kernel" {
+    grep -q "PWM_ROCKCHIP=y" "$SEED"
 }
 
 @test "includes passwall2, smartdns, tailscale" {

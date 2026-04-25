@@ -16,7 +16,8 @@ CONFIG_TARGET_IMAGES_GZIP=y
 # Drivers
 # ============================================================
 CONFIG_PACKAGE_kmod-usb-net-rtl8152=y
-CONFIG_PACKAGE_kmod-pwm-rockchip=y
+# PWM (rockchip) is built into kernel via CONFIG_PWM_ROCKCHIP=y in target/linux/rockchip;
+# no separate kmod-pwm-rockchip package exists.
 
 # ============================================================
 # Base + LuCI + i18n + theme
