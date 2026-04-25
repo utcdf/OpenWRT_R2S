@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# mode-switch: 在 PPPoE 主路由 / 双口对等交换 / 旁路由 三种模式间切换
+# usage: mode-switch [pppoe|switch|bypass|status]
+set -u
+
+ROOT="${ROOT:-}"
+PROFILES_DIR="${ROOT}/etc/profiles"
+CONFIG_DIR="${ROOT}/etc/config"
+LOG_FILE="${ROOT}/var/log/mode-switch.log"
+INITD="${ROOT}/etc/init.d"
+SKIP_RESTART="${SKIP_RESTART:-0}"
+
+usage() {
+    cat <<'EOF'
+Usage: mode-switch <pppoe|switch|bypass|status|--help>
+
+Modes:
+  pppoe    - PPPoE 主路由 (eth0=WAN PPPoE, eth1=LAN)
+  switch   - 双口对等交换 (eth0+eth1 桥接为 br-lan)
+  bypass   - 旁路由透明网关 (eth0 单臂)
+  status   - 显示当前激活模式
+EOF
+}
+
+log() {
+    mkdir -p "$(dirname "$LOG_FILE")"
+    echo "[$(date '+%F %T')] $*" | tee -a "$LOG_FILE"
+}
+
+current_mode() {
+    uci -q get mode-switch.current.name 2>/dev/null || echo "unknown"
+}
+
+profile_for() {
+    case "$1" in
+        pppoe)  echo "pppoe-main" ;;
+        switch) echo "switch-equal" ;;
+        bypass) echo "bypass-gateway" ;;
+        *)      echo "" ;;
+    esac
+}
+
+backup_configs() {
+    local ts="$1"
+    local bak="${ROOT}/etc/config.bak.${ts}"
+    mkdir -p "$bak"
+    for f in network firewall dhcp; do
+        cp "$CONFIG_DIR/$f" "$bak/$f"
+    done
+    echo "$bak"
+}
+
+restore_from() {
+    local bak="$1"
+    log "restoring from $bak"
+    for f in network firewall dhcp; do
+        cp "$bak/$f" "$CONFIG_DIR/$f"
+    done
+}
+
+apply_profile() {
+    local prof="$1"
+    local src="${PROFILES_DIR}/${prof}"
+    [ -d "$src" ] || { log "profile not found: $src"; return 1; }
+    for f in network firewall dhcp; do
+        cp "$src/$f" "$CONFIG_DIR/$f" || return 1
+    done
+}
+
+inject_pppoe_creds() {
+    local user pass mtu service
+    user=$(uci -q get mode-switch.pppoe.username || echo "")
+    pass=$(uci -q get mode-switch.pppoe.password || echo "")
+    mtu=$(uci -q get mode-switch.pppoe.mtu || echo "1492")
+    service=$(uci -q get mode-switch.pppoe.service || echo "")
+
+    [ -n "$user" ] && uci set network.wan.username="$user"
+    [ -n "$pass" ] && uci set network.wan.password="$pass"
+    [ -n "$mtu" ] && uci set network.wan.mtu="$mtu"
+    [ -n "$service" ] && uci set network.wan.service="$service"
+    uci commit network
+}
+
+inject_bypass_params() {
+    local ip mask gw dns
+    ip=$(uci -q get mode-switch.bypass.ipaddr || echo "")
+    mask=$(uci -q get mode-switch.bypass.netmask || echo "")
+    gw=$(uci -q get mode-switch.bypass.gateway || echo "")
+    dns=$(uci -q get mode-switch.bypass.dns || echo "")
+
+    [ -n "$ip" ] && uci set network.lan.ipaddr="$ip"
+    [ -n "$mask" ] && uci set network.lan.netmask="$mask"
+    [ -n "$gw" ] && uci set network.lan.gateway="$gw"
+    if [ -n "$dns" ]; then
+        uci -q delete network.lan.dns
+        uci add_list network.lan.dns="$dns"
+    fi
+    uci commit network
+}
+
+restart_services() {
+    [ "$SKIP_RESTART" -eq 1 ] && { log "SKIP_RESTART=1; not restarting"; return 0; }
+    "$INITD/network" restart || return 1
+    "$INITD/firewall" restart || return 1
+    "$INITD/dnsmasq" restart || return 1
+    return 0
+}
+
+do_status() {
+    echo "current mode: $(current_mode)"
+    if [ -f "$LOG_FILE" ]; then
+        echo "--- last 50 log lines ---"
+        tail -n 50 "$LOG_FILE"
+    fi
+}
+
+main() {
+    local action="${1:-}"
+    case "$action" in
+        ""|--help|-h) usage; exit 0 ;;
+        status) do_status; exit 0 ;;
+        pppoe|switch|bypass) ;;
+        *) usage >&2; exit 2 ;;
+    esac
+
+    local prof; prof=$(profile_for "$action")
+    [ -n "$prof" ] || { usage >&2; exit 2; }
+
+    log "switching to $action ($prof)"
+
+    local ts; ts=$(date +%Y%m%d-%H%M%S)
+    local bak; bak=$(backup_configs "$ts")
+    log "backup at $bak"
+
+    if ! apply_profile "$prof"; then
+        log "apply_profile failed; rolling back"
+        restore_from "$bak"
+        exit 1
+    fi
+
+    case "$action" in
+        pppoe)  inject_pppoe_creds ;;
+        bypass) inject_bypass_params ;;
+    esac
+
+    uci set mode-switch.current.name="$prof"
+    uci commit mode-switch
+
+    if ! restart_services; then
+        log "service restart failed; rolling back"
+        restore_from "$bak"
+        "$INITD/network" restart >/dev/null 2>&1 || true
+        "$INITD/firewall" restart >/dev/null 2>&1 || true
+        "$INITD/dnsmasq" restart >/dev/null 2>&1 || true
+        exit 1
+    fi
+
+    log "switch to $action completed"
+}
+
+main "$@"
