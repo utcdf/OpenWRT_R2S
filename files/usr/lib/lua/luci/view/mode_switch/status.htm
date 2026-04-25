@@ -1,0 +1,72 @@
+<%+header%>
+<style>
+.r2s-mode-card { padding: 12px 16px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 12px; }
+.r2s-current { font-weight: bold; padding: 4px 8px; background: #e8f5e9; border-radius: 4px; }
+.r2s-mode-buttons button { margin-right: 8px; }
+.r2s-log { background: #1e1e1e; color: #ddd; font-family: monospace; padding: 12px; max-height: 300px; overflow: auto; }
+</style>
+
+<h2><%:Mode Switch%></h2>
+
+<div class="r2s-mode-card">
+    <div><%:Current mode%>: <span class="r2s-current" id="r2s-current">—</span></div>
+    <div class="r2s-mode-buttons" style="margin-top:12px;">
+        <button class="cbi-button cbi-button-apply" onclick="r2sSwitch('switch')">双口对等交换</button>
+        <button class="cbi-button cbi-button-apply" onclick="r2sSwitch('pppoe')">PPPoE 主路由</button>
+        <button class="cbi-button cbi-button-apply" onclick="r2sSwitch('bypass')">旁路由网关</button>
+    </div>
+</div>
+
+<div class="r2s-mode-card">
+    <h3><%:Recent log%></h3>
+    <pre class="r2s-log" id="r2s-log">加载中...</pre>
+</div>
+
+<script>
+function r2sFetch(url, opts) {
+    return fetch(url, opts || {}).then(function(r){ return r.text().then(function(t){ return { code: r.status, body: t }; }); });
+}
+
+function r2sRefreshCurrent() {
+    r2sFetch('<%=luci.dispatcher.build_url("admin","status","mode_switch","current")%>')
+        .then(function(res){
+            try {
+                var j = JSON.parse(res.body);
+                var m = (j.output || '').match(/current mode:\s*(\S+)/);
+                document.getElementById('r2s-current').textContent = m ? m[1] : '?';
+            } catch (e) {
+                document.getElementById('r2s-current').textContent = 'error';
+            }
+        });
+}
+
+function r2sRefreshLog() {
+    r2sFetch('<%=luci.dispatcher.build_url("admin","status","mode_switch","log")%>')
+        .then(function(res){
+            document.getElementById('r2s-log').textContent = res.body || '(empty)';
+        });
+}
+
+function r2sSwitch(mode) {
+    if (!confirm('确认切换到 ' + mode + ' 模式？网络可能短暂中断。')) return;
+    var fd = new FormData();
+    fd.append('mode', mode);
+    r2sFetch('<%=luci.dispatcher.build_url("admin","status","mode_switch","do_switch")%>',
+             { method: 'POST', body: fd })
+        .then(function(res){
+            try {
+                var j = JSON.parse(res.body);
+                alert(j.ok ? '切换成功\n\n' + j.output : '切换失败 (code ' + j.code + ')\n\n' + j.output);
+            } catch (e) {
+                alert('响应解析失败: ' + res.body);
+            }
+            setTimeout(function(){ r2sRefreshCurrent(); r2sRefreshLog(); }, 1500);
+        });
+}
+
+r2sRefreshCurrent();
+r2sRefreshLog();
+setInterval(r2sRefreshLog, 5000);
+</script>
+
+<%+footer%>
