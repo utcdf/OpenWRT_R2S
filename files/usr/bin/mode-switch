@@ -43,9 +43,9 @@ profile_for() {
 backup_configs() {
     local ts="$1"
     local bak="${ROOT}/etc/config.bak.${ts}"
-    mkdir -p "$bak"
+    mkdir -p "$bak" || return 1
     for f in network firewall dhcp; do
-        cp "$CONFIG_DIR/$f" "$bak/$f"
+        cp "$CONFIG_DIR/$f" "$bak/$f" || { log "backup cp failed: $f"; return 1; }
     done
     echo "$bak"
 }
