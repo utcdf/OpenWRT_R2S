@@ -33,8 +33,9 @@
 | `files/usr/bin/fan-pid-loop` | PID 风扇主循环脚本 |
 | `files/usr/lib/lua/luci/controller/mode_switch.lua` | mode-switch LuCI 路由控制器 |
 | `files/usr/lib/lua/luci/controller/fan_pid.lua` | fan-pid LuCI 路由控制器 |
-| `files/usr/lib/lua/luci/view/mode_switch/{status,pppoe,bypass}.htm` | mode-switch 三个 tab 视图 |
-| `files/usr/lib/lua/luci/view/fan_pid/main.htm` | fan-pid 视图 |
+| `files/usr/lib/lua/luci/view/mode_switch/status.htm` | mode-switch 状态 tab 模板（含切换按钮 + 实时日志） |
+| `files/usr/lib/lua/luci/model/cbi/mode_switch/{pppoe,bypass}.lua` | mode-switch PPPoE / 旁路由 配置 tab CBI 表单 |
+| `files/usr/lib/lua/luci/model/cbi/fan_pid/main.lua` | fan-pid 配置 CBI 表单 |
 | `scripts/flash-sd.sh` | macOS 烧卡脚本 |
 | `scripts/pre-deploy-check.sh` | 部署前依赖检查 |
 | `tests/*.bats` | bats 单元测试 |
@@ -118,7 +119,7 @@ PPPoE 主路由 / 双口对等交换 / 旁路由透明网关。
 ```bash
 mkdir -p docker build files/etc/config files/etc/profiles/{pppoe-main,switch-equal,bypass-gateway} \
          files/etc/init.d files/etc/uci-defaults files/usr/bin \
-         files/usr/lib/lua/luci/{controller,view/mode_switch,view/fan_pid} \
+         files/usr/lib/lua/luci/{controller,view/mode_switch,model/cbi/mode_switch,model/cbi/fan_pid} \
          scripts tests/lib/fakes patches .github/workflows out logs
 
 touch out/.gitkeep logs/.gitkeep patches/.gitkeep
@@ -157,7 +158,8 @@ find . -type d -not -path '*/\.git*' | sort
 ./files/usr/lib/lua/luci
 ./files/usr/lib/lua/luci/controller
 ./files/usr/lib/lua/luci/view
-./files/usr/lib/lua/luci/view/fan_pid
+./files/usr/lib/lua/luci/model/cbi/fan_pid
+./files/usr/lib/lua/luci/model/cbi/mode_switch
 ./files/usr/lib/lua/luci/view/mode_switch
 ./logs
 ./out
