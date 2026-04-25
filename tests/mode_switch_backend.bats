@@ -137,4 +137,5 @@ EOF
     run env ROOT="$ROOT" "$SCRIPT" pppoe
     [ "$status" -ne 0 ]
     grep -q "br-lan" "$ROOT/etc/config/network"
+    grep -q "option name 'switch-equal'" "$ROOT/etc/config/mode-switch"
 }

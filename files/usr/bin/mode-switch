@@ -126,10 +126,16 @@ main() {
     local prof; prof=$(profile_for "$action")
     [ -n "$prof" ] || { usage >&2; exit 2; }
 
+    local prev_prof; prev_prof=$(current_mode)
+
     log "switching to $action ($prof)"
 
     local ts; ts=$(date +%Y%m%d-%H%M%S)
-    local bak; bak=$(backup_configs "$ts")
+    local bak
+    if ! bak=$(backup_configs "$ts"); then
+        log "backup_configs failed; aborting switch"
+        exit 1
+    fi
     log "backup at $bak"
 
     if ! apply_profile "$prof"; then
@@ -147,8 +153,12 @@ main() {
     uci commit mode-switch
 
     if ! restart_services; then
-        log "service restart failed; rolling back"
+        log "service restart failed; rolling back to $prev_prof"
         restore_from "$bak"
+        if [ -n "$prev_prof" ] && [ "$prev_prof" != "unknown" ]; then
+            uci set mode-switch.current.name="$prev_prof"
+            uci commit mode-switch
+        fi
         "$INITD/network" restart >/dev/null 2>&1 || true
         "$INITD/firewall" restart >/dev/null 2>&1 || true
         "$INITD/dnsmasq" restart >/dev/null 2>&1 || true
