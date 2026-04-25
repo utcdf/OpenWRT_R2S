@@ -105,6 +105,11 @@ jobs:
           mkdir -p "$OUT"
           cp immortalwrt/bin/targets/rockchip/armv8/*nanopi-r2s* "$OUT/" || true
           cp immortalwrt/bin/targets/rockchip/armv8/sha256sums   "$OUT/" || true
+          # Per-file sidecar for flash-sd.sh which looks for <image>.sha256
+          for img in "$OUT"/*nanopi-r2s*sysupgrade.img.gz; do
+            [ -f "$img" ] && sha256sum "$img" | awk '{print $1"  "$2}' \
+              | sed "s|$OUT/||" > "${img}.sha256"
+          done
           ls -lh "$OUT"
 
       - name: Upload artifact
