@@ -1,6 +1,6 @@
 # NanoPi R2S 多功能定制 OpenWRT
 
-[![build](https://github.com/<user>/<repo>/actions/workflows/build.yml/badge.svg)](https://github.com/<user>/<repo>/actions/workflows/build.yml)
+[![build](https://github.com/utcdf/OpenWRT_R2S/actions/workflows/build.yml/badge.svg)](https://github.com/utcdf/OpenWRT_R2S/actions/workflows/build.yml)
 
 基于 ImmortalWrt master 的 NanoPi R2S 定制固件，**单镜像**在线切换三种工作模式：
 
