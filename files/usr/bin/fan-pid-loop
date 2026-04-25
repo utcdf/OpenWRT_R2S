@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# fan-pid-loop: PID 风扇主循环
+# 状态文件: $FAN_STATE; 默认 /var/run/fan-pid.state
+# 通过环境变量覆盖 UCI 选项, 测试用; 生产由 init.d/fan-pid 从 /etc/config/fan 读
+set -u
+
+read_uci() {
+    local key="$1" default="$2"
+    if command -v uci >/dev/null 2>&1; then
+        uci -q get "fan.pid.$key" 2>/dev/null || echo "$default"
+    else
+        echo "$default"
+    fi
+}
+
+THERMAL="${FAN_THERMAL:-$(read_uci thermal_path /sys/class/thermal/thermal_zone0/temp)}"
+PWM_DIR="${FAN_PWM_DIR:-$(read_uci pwm_path /sys/class/pwm/pwmchip0/pwm0)}"
+STATE="${FAN_STATE:-/var/run/fan-pid.state}"
+SETPOINT="${FAN_SETPOINT:-$(read_uci setpoint 55)}"
+KP="${FAN_KP:-$(read_uci kp 4.0)}"
+KI="${FAN_KI:-$(read_uci ki 0.2)}"
+KD="${FAN_KD:-$(read_uci kd 1.0)}"
+INTERVAL="${FAN_INTERVAL:-$(read_uci interval 5)}"
+PWM_MIN="${FAN_PWM_MIN:-$(read_uci pwm_min 0)}"
+PWM_MAX="${FAN_PWM_MAX:-$(read_uci pwm_max 255)}"
+ONCE="${FAN_ONCE:-0}"
+
+LOG_LIMIT_S=60
+# shellcheck disable=SC2034
+last_thermal_warn=0
+# shellcheck disable=SC2034
+last_pwm_warn=0
+
+now() { date +%s; }
+log_warn_throttled() {
+    local msg="$2" current_var="$3"
+    local now_s; now_s=$(now)
+    local last="${!current_var}"
+    if [ $((now_s - last)) -ge "$LOG_LIMIT_S" ]; then
+        echo "[fan-pid] $msg" >&2
+        eval "${current_var}=${now_s}"
+    fi
+}
+
+read_temp_c() {
+    local raw
+    if [ -r "$THERMAL" ]; then
+        raw=$(cat "$THERMAL" 2>/dev/null) || return 1
+        [ -n "$raw" ] || return 1
+        echo $((raw / 1000))
+        return 0
+    fi
+    return 1
+}
+
+write_pwm() {
+    local val="$1"
+    [ -d "$PWM_DIR" ] || return 1
+    printf '%s\n' "$val" > "$PWM_DIR/duty_cycle" 2>/dev/null
+}
+
+clamp_int() {
+    local v="$1" min="$2" max="$3"
+    if [ "$v" -lt "$min" ]; then echo "$min"; return; fi
+    if [ "$v" -gt "$max" ]; then echo "$max"; return; fi
+    echo "$v"
+}
+
+pid_step() {
+    local temp="$1" setpoint="$2" kp="$3" ki="$4" kd="$5" \
+          dt="$6" prev_err="$7" integ="$8" pwm_min="$9" pwm_max="${10}"
+    awk -v t="$temp" -v sp="$setpoint" -v kp="$kp" -v ki="$ki" -v kd="$kd" \
+        -v dt="$dt" -v pe="$prev_err" -v ig="$integ" -v lo="$pwm_min" -v hi="$pwm_max" '
+    BEGIN {
+        err = t - sp
+        ig_new = ig + err * dt
+        deriv = (err - pe) / dt
+        out = kp*err + ki*ig_new + kd*deriv
+        if (out < lo) { out = lo; ig_new = ig }
+        if (out > hi) { out = hi; ig_new = ig }
+        printf "%d %.6f %.6f", int(out + 0.5), err, ig_new
+    }'
+}
+
+run_once() {
+    local temp out err integ
+    temp=$(read_temp_c) || temp=""
+    if [ -z "$temp" ]; then
+        log_warn_throttled thermal "thermal read failed; forcing PWM=$PWM_MAX" last_thermal_warn
+        out="$PWM_MAX"
+        if ! write_pwm "$out"; then
+            log_warn_throttled pwm "pwm write failed (path=$PWM_DIR/duty_cycle)" last_pwm_warn
+        fi
+        echo "temp_c=" > "$STATE"
+        echo "pwm=$out" >> "$STATE"
+        return 0
+    fi
+
+    integ="${INTEG:-0}"
+    prev_err="${PREV_ERR:-0}"
+    read -r out err integ_new < <(pid_step "$temp" "$SETPOINT" "$KP" "$KI" "$KD" \
+                                            "$INTERVAL" "$prev_err" "$integ" \
+                                            "$PWM_MIN" "$PWM_MAX")
+    out=$(clamp_int "$out" "$PWM_MIN" "$PWM_MAX")
+
+    if ! write_pwm "$out"; then
+        log_warn_throttled pwm "pwm write failed; will retry" last_pwm_warn
+    fi
+
+    {
+        echo "temp_c=$temp"
+        echo "pwm=$out"
+        echo "err=$err"
+        echo "integ=$integ_new"
+        echo "ts=$(date '+%F %T')"
+    } > "$STATE"
+
+    PREV_ERR="$err"
+    INTEG="$integ_new"
+}
+
+main_loop() {
+    PREV_ERR=0
+    INTEG=0
+    while true; do
+        run_once
+        sleep "$INTERVAL" 2>/dev/null || sleep 5
+    done
+}
+
+trap 'echo "$PWM_MAX" > "$PWM_DIR/duty_cycle" 2>/dev/null || true; exit 0' TERM INT
+
+mkdir -p "$(dirname "$STATE")" 2>/dev/null || true
+
+load_state_for_once() {
+    PREV_ERR=0
+    INTEG=0
+    [ -f "$STATE" ] || return 0
+    local v
+    v=$(awk -F= '/^err=/ {print $2}' "$STATE")
+    [ -n "$v" ] && PREV_ERR="$v"
+    v=$(awk -F= '/^integ=/ {print $2}' "$STATE")
+    [ -n "$v" ] && INTEG="$v"
+}
+
+if [ "$ONCE" = "1" ]; then
+    load_state_for_once
+    run_once
+else
+    main_loop
+fi
