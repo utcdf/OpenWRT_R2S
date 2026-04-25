@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.6
 FROM debian:bookworm-slim
 
-ARG APT_MIRROR=deb.debian.org
+ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
 ARG BUILDER_UID=1000
 ARG BUILDER_GID=1000
 
@@ -13,6 +13,7 @@ RUN sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR
 
 # OpenWRT/ImmortalWrt 编译完整依赖
 # 见 https://openwrt.org/docs/guide-developer/toolchain/install-buildsystem
+# gcc-multilib/g++-multilib intentionally omitted: not available on aarch64; not required for ImmortalWrt aarch64 target builds
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential \
         ccache \

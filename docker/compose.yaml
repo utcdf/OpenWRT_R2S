@@ -3,7 +3,7 @@ services:
     build:
       context: ./docker
       args:
-        APT_MIRROR: deb.debian.org
+        APT_MIRROR: mirrors.tuna.tsinghua.edu.cn
     image: r2s-builder:latest
     container_name: r2s-builder
     working_dir: /work
