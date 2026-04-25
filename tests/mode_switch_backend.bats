@@ -139,3 +139,18 @@ EOF
     grep -q "br-lan" "$ROOT/etc/config/network"
     grep -q "option name 'switch-equal'" "$ROOT/etc/config/mode-switch"
 }
+
+@test "switch rolls back on carrier check timeout" {
+    # restart_services succeeds, but carrier check fails (CARRIER_CHECK_CMD always non-zero)
+    run env ROOT="$ROOT" CARRIER_CHECK_CMD="false" "$SCRIPT" pppoe
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"carrier check timeout"* ]] || grep -q "carrier check timeout" "$ROOT/var/log/mode-switch.log"
+    grep -q "br-lan" "$ROOT/etc/config/network"
+    grep -q "option name 'switch-equal'" "$ROOT/etc/config/mode-switch"
+}
+
+@test "switch passes carrier check when CARRIER_CHECK_CMD returns 0" {
+    run env ROOT="$ROOT" CARRIER_CHECK_CMD="true" "$SCRIPT" pppoe
+    [ "$status" -eq 0 ]
+    grep -q "switch to pppoe completed" "$ROOT/var/log/mode-switch.log"
+}
