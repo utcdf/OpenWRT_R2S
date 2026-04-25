@@ -34,7 +34,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential ccache ecj fastjar file g++ gawk gettext git \
             java-propose-classpath libelf-dev libncurses-dev libssl-dev \
-            python3 python3-setuptools rsync subversion \
+            python3 python3-setuptools python3-pyelftools rsync subversion \
             swig time unzip wget xsltproc zlib1g-dev sudo curl ca-certificates \
             bash bc bison flex gcc-multilib g++-multilib zstd
 
@@ -92,18 +92,24 @@ jobs:
           make download -j8 V=s 2>&1 | tail -200 || make download -j1 V=s
 
       - name: Build
+        shell: bash
         run: |
+          set -eo pipefail
           mkdir -p logs
           cd immortalwrt
           export PATH=/usr/lib/ccache:$PATH
-          make -j$(nproc) 2>&1 | tee ../logs/build.log \
-            || make -j1 V=s 2>&1 | tee -a ../logs/build.log
+          if ! make -j"$(nproc)" 2>&1 | tee ../logs/build.log; then
+            echo "::warning::parallel build failed; retrying with -j1 V=s for diagnostics"
+            make -j1 V=s 2>&1 | tee -a ../logs/build.log
+          fi
 
       - name: Collect artifacts
+        shell: bash
         run: |
+          set -eo pipefail
           OUT="out/${{ steps.commit.outputs.short }}"
           mkdir -p "$OUT"
-          cp immortalwrt/bin/targets/rockchip/armv8/*nanopi-r2s* "$OUT/" || true
+          cp immortalwrt/bin/targets/rockchip/armv8/*nanopi-r2s* "$OUT/"
           cp immortalwrt/bin/targets/rockchip/armv8/sha256sums   "$OUT/" || true
           # Per-file sidecar for flash-sd.sh which looks for <image>.sha256
           for img in "$OUT"/*nanopi-r2s*sysupgrade.img.gz; do
@@ -111,6 +117,13 @@ jobs:
               | sed "s|$OUT/||" > "${img}.sha256"
           done
           ls -lh "$OUT"
+          # Fail loudly if no sysupgrade image was produced
+          shopt -s nullglob
+          imgs=("$OUT"/*nanopi-r2s*sysupgrade.img.gz)
+          if [ ${#imgs[@]} -eq 0 ]; then
+            echo "::error::no nanopi-r2s sysupgrade image produced"
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
