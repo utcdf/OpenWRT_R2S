@@ -1,0 +1,46 @@
+#!/bin/sh
+# Runs once on first boot; deleted on success by OpenWRT.
+# Path overrides exist for unit testing only.
+set -e
+
+CONFIG_DIR="${CONFIG_DIR:-/etc/config}"
+PROFILES_DIR="${PROFILES_DIR:-/etc/profiles}"
+
+# 1. Hostname / timezone / NTP
+uci set system.@system[0].hostname='NanoPi-R2S'
+uci set system.@system[0].timezone='CST-8'
+uci set system.@system[0].zonename='Asia/Shanghai'
+uci -q delete system.ntp.server
+uci add_list system.ntp.server='ntp.aliyun.com'
+uci add_list system.ntp.server='ntp1.aliyun.com'
+uci add_list system.ntp.server='time.cloudflare.com'
+uci commit system
+
+# 2. Default LAN segment 192.168.2.0/24 (later overwritten by switch-equal profile)
+uci set network.lan.ipaddr='192.168.2.1'
+uci set network.lan.netmask='255.255.255.0'
+uci commit network
+
+# 3. Apply switch-equal as default initial profile
+if [ -f "$PROFILES_DIR/switch-equal/network" ] && [ -f "$PROFILES_DIR/switch-equal/firewall" ] && [ -f "$PROFILES_DIR/switch-equal/dhcp" ]; then
+    cp "$PROFILES_DIR/switch-equal/network"  "$CONFIG_DIR/network"
+    cp "$PROFILES_DIR/switch-equal/firewall" "$CONFIG_DIR/firewall"
+    cp "$PROFILES_DIR/switch-equal/dhcp"     "$CONFIG_DIR/dhcp"
+fi
+
+# 4. mode-switch UCI defaults marker
+uci set mode-switch.current=mode 2>/dev/null || true
+uci set mode-switch.current.name='switch-equal'
+uci commit mode-switch
+
+# 5. Enable fan-pid
+if [ -x /etc/init.d/fan-pid ]; then
+    /etc/init.d/fan-pid enable
+    /etc/init.d/fan-pid start
+else
+    : > "$CONFIG_DIR/.fan_pid_enabled_marker"
+fi
+
+# 6. (no root password set; LuCI 强制改密)
+
+exit 0

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Log the uci command in a readable format
+# For arguments with '=', quote the value part for clarity
+{
+    printf 'uci'
+    for arg in "$@"; do
+        if [[ "$arg" == *"="* ]]; then
+            # Split on first '=' and quote the value
+            key="${arg%%=*}"
+            val="${arg#*=}"
+            printf " %s='%s'" "$key" "$val"
+        else
+            printf ' %s' "$arg"
+        fi
+    done
+    printf '\n'
+} >> "${UCI_LOG:-/dev/stderr}"
+exit 0
