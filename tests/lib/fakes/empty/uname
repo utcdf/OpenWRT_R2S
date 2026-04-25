@@ -1,0 +1,6 @@
+#!/bin/sh
+if [ "$1" = "-s" ]; then
+    echo "Darwin"
+else
+    /usr/bin/uname "$@"
+fi

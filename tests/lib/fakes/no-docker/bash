@@ -1,0 +1,5 @@
+#!/bin/sh
+# Wrapper that runs bash with ONLY fakes in PATH
+FAKE_DIR="$(dirname "$(readlink -f "$0")")"
+export PATH="$FAKE_DIR"
+exec /bin/bash "$@"

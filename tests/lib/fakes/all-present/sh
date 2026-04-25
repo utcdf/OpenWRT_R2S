@@ -1,0 +1,3 @@
+#!/bin/sh
+# This is a thin wrapper that runs the real sh  
+exec /bin/sh "$@"
