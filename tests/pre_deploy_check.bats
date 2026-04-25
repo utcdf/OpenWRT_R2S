@@ -22,3 +22,15 @@ setup() {
     [[ "$output" == *"docker"* ]]
     [[ "$output" == *"git"* ]]
 }
+
+@test "--check-image fails when no image" {
+    run env CHECK_IMAGE_DIR="${BATS_TMPDIR}/empty" "${BATS_TEST_DIRNAME}/../scripts/pre-deploy-check.sh" --check-image
+    [ "$status" -ne 0 ]
+}
+
+@test "--check-image succeeds when image present" {
+    mkdir -p "${BATS_TMPDIR}/with-image"
+    : > "${BATS_TMPDIR}/with-image/immortalwrt-rockchip-armv8-friendlyarm_nanopi-r2s-squashfs-sysupgrade.img.gz"
+    run env CHECK_IMAGE_DIR="${BATS_TMPDIR}/with-image" "${BATS_TEST_DIRNAME}/../scripts/pre-deploy-check.sh" --check-image
+    [ "$status" -eq 0 ]
+}
