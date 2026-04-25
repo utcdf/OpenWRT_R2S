@@ -25,6 +25,38 @@ run() {
     fi
 }
 
+# retry_net: run a network-dependent command with backoff retries
+# usage: retry_net <max_attempts> <delays_csv> -- <command...>
+# example: retry_net 3 "10,30,60" -- git clone https://...
+retry_net() {
+    local max="$1"
+    local delays_csv="$2"
+    shift 2
+    [ "$1" = "--" ] && shift
+
+    local attempt=1
+    IFS=',' read -ra delays <<< "$delays_csv"
+
+    while [ "$attempt" -le "$max" ]; do
+        if [ "$DRY_RUN" -eq 1 ]; then
+            echo "would run (attempt $attempt/$max): $*"
+            return 0
+        fi
+        if "$@"; then
+            return 0
+        fi
+        if [ "$attempt" -lt "$max" ]; then
+            local d="${delays[$((attempt - 1))]:-30}"
+            echo "[retry] attempt $attempt failed; sleeping ${d}s before retry"
+            sleep "$d"
+        fi
+        attempt=$((attempt + 1))
+    done
+
+    echo "[retry] all $max attempts failed for: $*" >&2
+    return 1
+}
+
 [ -f "$COMMIT_FILE" ] || { echo "缺少 build/IMMORTALWRT_COMMIT" >&2; exit 1; }
 COMMIT=$(tr -d '[:space:]' < "$COMMIT_FILE")
 [[ "$COMMIT" =~ ^[a-f0-9]{40}$ ]] || { echo "commit 格式异常: $COMMIT" >&2; exit 1; }
@@ -33,7 +65,7 @@ COMMIT=$(tr -d '[:space:]' < "$COMMIT_FILE")
 if [ ! -d "$SRC_DIR/.git" ] || [ "$NO_CACHE" -eq 1 ]; then
     [ "$NO_CACHE" -eq 1 ] && run rm -rf "$SRC_DIR"
     echo "[inner] cloning ImmortalWrt..."
-    run git clone https://github.com/immortalwrt/immortalwrt "$SRC_DIR"
+    retry_net 3 "10,30,60" -- git clone https://github.com/immortalwrt/immortalwrt "$SRC_DIR"
 fi
 
 # In DRY_RUN mode, the SRC_DIR may not exist, so create a stub for testing
@@ -43,7 +75,7 @@ fi
 
 cd "$SRC_DIR"
 echo "[inner] fetch + checkout $COMMIT"
-run git fetch --tags origin
+retry_net 3 "10,30,60" -- git fetch --tags origin
 run git checkout "$COMMIT"
 
 # Step B: feeds
@@ -51,10 +83,10 @@ echo "[inner] applying feeds.conf.default"
 run cp "$FEEDS_FILE" "$SRC_DIR/feeds.conf.default"
 
 echo "[inner] feeds update -a"
-run ./scripts/feeds update -a
+retry_net 3 "10,30,60" -- ./scripts/feeds update -a
 
 echo "[inner] feeds install -a"
-run ./scripts/feeds install -a
+retry_net 3 "10,30,60" -- ./scripts/feeds install -a
 
 if [ "$ACTION" = "update-feeds" ]; then
     echo "[inner] update-feeds done"

@@ -28,3 +28,14 @@ setup() {
     grep -q "passwall2" "$feeds"
     grep -q "smartdns" "$feeds"
 }
+
+@test "build-inner.sh defines retry_net helper" {
+    grep -q "retry_net()" "$INNER"
+}
+
+@test "retry_net invocations wrap git clone, git fetch, feeds update, feeds install" {
+    grep -q "retry_net.*git clone" "$INNER"
+    grep -q "retry_net.*git fetch" "$INNER"
+    grep -q "retry_net.*feeds update" "$INNER"
+    grep -q "retry_net.*feeds install" "$INNER"
+}
