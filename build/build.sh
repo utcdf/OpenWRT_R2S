@@ -77,8 +77,10 @@ case "$ACTION" in
         run docker run -it "${DOCKER_ARGS[@]}" "$IMG_TAG" bash
         ;;
     *)
+        INNER_ARGS=()
+        [ "$ACTION" = "update-feeds" ] && INNER_ARGS+=(--update-feeds)
+        [ "$NO_CACHE" -eq 1 ] && INNER_ARGS+=(--no-cache)
         run docker run "${DOCKER_ARGS[@]}" "$IMG_TAG" \
-            bash build/build.sh "$([ "$ACTION" = "update-feeds" ] && echo --update-feeds)" \
-            "$([ "$NO_CACHE" -eq 1 ] && echo --no-cache)"
+            bash build/build.sh "${INNER_ARGS[@]+"${INNER_ARGS[@]}"}"
         ;;
 esac
