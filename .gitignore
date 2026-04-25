@@ -1,0 +1,26 @@
+# ImmortalWrt 源码（编译期 clone，不入库）
+immortalwrt/
+
+# 编译产物
+out/
+logs/
+*.img
+*.img.gz
+*.bin
+*.tar
+*.sha256
+
+# 完整 .config（保留 .config.seed）
+build/.config
+build/.config.old
+
+# 容器与构建缓存
+.cache/
+ccache/
+
+# 系统/编辑器
+.DS_Store
+*.swp
+*~
+.vscode/
+.idea/
